@@ -5,6 +5,7 @@ Dim statusDict As Object 'Scripting.Dictionary: CategoryName -> status string
 Dim configFolderPath As String
 Dim configFilePath As String
 Dim currentStore As Outlook.Store
+Dim headerTitle As String
 Const CONFIG_FILENAME As String = "VerfgFormConfig.txt"
 Const HEADER_DEFAULT_TITLE As String = "Z III 3 - ENO SASPF"
 
@@ -389,6 +390,7 @@ Private Sub LoadConfigData()
     Set statusDict = CreateObject("Scripting.Dictionary")
     Set keywordDict = CreateObject("Scripting.Dictionary")
     keywordDict.CompareMode = 1 'Text compare
+    headerTitle = HEADER_DEFAULT_TITLE
     
     If Len(configFilePath) = 0 Then Exit Sub
     
@@ -425,6 +427,10 @@ Private Sub LoadConfigData()
                     Next i
                 End If
             End If
+        ElseIf section = "HEADER" Then
+            If LCase$(Left$(line, 6)) = "title=" Then
+                headerTitle = Mid$(line, 7)
+            End If
         End If
 NextLine:
     Loop
@@ -449,6 +455,7 @@ Private Sub SaveConfigData()
     Dim mainKey As Variant
     Dim subs As Collection
     Dim line As String
+    Dim hdr As String
     
     If categoryList Is Nothing Then
         Set categoryList = New Collection
@@ -460,6 +467,15 @@ Private Sub SaveConfigData()
     If statusDict Is Nothing Then
         Set statusDict = CreateObject("Scripting.Dictionary")
     End If
+    'Headertext aus UI aktualisieren (falls vorhanden)
+    On Error Resume Next
+    hdr = Trim$(Me.txtHeaderTitle.Text)
+    On Error GoTo 0
+    If Len(hdr) > 0 Then
+        headerTitle = hdr
+    ElseIf Len(headerTitle) = 0 Then
+        headerTitle = HEADER_DEFAULT_TITLE
+    End If
     
     If Len(configFolderPath) = 0 Then Exit Sub
     If Dir(configFolderPath, vbDirectory) = "" Then
@@ -470,6 +486,9 @@ Private Sub SaveConfigData()
     
     f = FreeFile
     Open configFilePath For Output As #f
+    Print #f, "[HEADER]"
+    Print #f, "Title=" & headerTitle
+    Print #f, ""
     Print #f, "[CATEGORIES]"
     For Each item In categoryList
         Print #f, item
@@ -489,6 +508,7 @@ Private Sub BuildDefaultData()
     Dim defaults As Variant
     Dim item As Variant
     Set categoryList = New Collection
+    headerTitle = HEADER_DEFAULT_TITLE
     defaults = Array("000 Ltg ENO", "002 BSB Ltg ENO", "001 Nutzungsmanagement", "010 Benutzermanagement", "020 Ausbildungsmanagement", "025 ENO POI", "030 EFO", "098 Allgemeine Info", "099 Ltg zKnA")
     For Each item In defaults
         categoryList.Add item
@@ -508,6 +528,7 @@ Private Sub InitFixedControls()
     If Me.Controls.Count > 0 Then
         On Error Resume Next
         Me.lblConfigPath.Caption = "Konfiguration: " & configFolderPath
+        Me.txtHeaderTitle.Text = headerTitle
         On Error GoTo 0
     End If
     
@@ -930,7 +951,7 @@ Private Function GetHeaderTitle() As String
     v = Trim$(Me.txtHeaderTitle.Value)
     On Error GoTo 0
     If Len(v) = 0 Then
-        v = HEADER_DEFAULT_TITLE
+        v = headerTitle
     End If
     GetHeaderTitle = v
 End Function
