@@ -1,26 +1,10 @@
-VERSION 5.00
-Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} VerfgForm 
-   Caption         =   "Verfügung ENO SASPF BMVg"
-   ClientHeight    =   9660
-   ClientLeft      =   120
-   ClientTop       =   465
-   ClientWidth     =   14355
-   OleObjectBlob   =   "VerfgForm.frx":0000
-   StartUpPosition =   1  'Fenstermitte
-End
-Attribute VB_Name = "VerfgForm"
-Attribute VB_GlobalNameSpace = False
-Attribute VB_Creatable = False
-Attribute VB_PredeclaredId = True
-Attribute VB_Exposed = False
-
-
 Dim DestFolder As Folder
 Dim categoryList As Collection
 Dim keywordDict As Object 'Scripting.Dictionary: MainKeyword -> Collection of SubKeywords
 Dim statusDict As Object 'Scripting.Dictionary: CategoryName -> status string
 Dim configFolderPath As String
 Dim configFilePath As String
+Dim currentStore As Outlook.Store
 Const CONFIG_FILENAME As String = "VerfgFormConfig.txt"
 
 
@@ -170,6 +154,7 @@ Private Sub CommandButton1_Click()
     Set myInbox = my.GetDefaultFolder(olFolderInbox)
    
     setAblage
+    Set currentStore = GetCurrentStore()
     
     Set selectedCategories = GetSelectedCategories()
     Set mailCategories = New Collection
@@ -179,7 +164,7 @@ Private Sub CommandButton1_Click()
         statusText = catInfo("status")
         tableRows = tableRows & "<tr><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>" & catInfo("name") & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>" & statusText & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'></td></tr>"
         If Len(Trim$(statusText)) > 0 Then
-            If CategoryExists(CStr(catInfo("name"))) Then
+            If CategoryExists(CStr(catInfo("name")), currentStore) Then
                 mailCategories.Add catInfo("name")
             Else
                 missingCats.Add catInfo("name")
@@ -339,6 +324,23 @@ Private Function GetCurrentItems() As VBA.Collection
     End If
   End If
   Set GetCurrentItems = c
+End Function
+
+Private Function GetCurrentStore() As Outlook.Store
+    On Error Resume Next
+    If TypeOf Application.ActiveWindow Is Outlook.Inspector Then
+        Set GetCurrentStore = Application.ActiveInspector.CurrentItem.Parent.Store
+        Exit Function
+    End If
+    Dim sel As Outlook.Selection
+    Set sel = Application.ActiveExplorer.Selection
+    If Not sel Is Nothing Then
+        If sel.Count > 0 Then
+            Set GetCurrentStore = sel.Item(1).Parent.Store
+            Exit Function
+        End If
+    End If
+    Set GetCurrentStore = Application.Session.DefaultStore
 End Function
 
 Private Sub HideLegacyCategoryControls()
@@ -805,12 +807,17 @@ Private Sub RemoveSubKeywordFromInput()
     PopulateKeywordCombos
 End Sub
 
-Private Function CategoryExists(catName As String) As Boolean
+Private Function CategoryExists(catName As String, Optional store As Outlook.Store) As Boolean
     Dim cats As Outlook.Categories
     Dim c As Outlook.Category
     CategoryExists = False
     On Error Resume Next
-    Set cats = Application.Session.Categories
+    If Not store Is Nothing Then
+        Set cats = store.Categories
+    End If
+    If cats Is Nothing Then
+        Set cats = Application.Session.Categories
+    End If
     If cats Is Nothing Then Exit Function
     For Each c In cats
         If StrComp(c.Name, catName, vbTextCompare) = 0 Then
@@ -824,8 +831,15 @@ Private Sub SyncCategoriesFromOutlook()
     Dim cats As Outlook.Categories
     Dim c As Outlook.Category
     Dim newList As New Collection
+    Dim st As Outlook.Store
     On Error Resume Next
-    Set cats = Application.Session.Categories
+    Set st = GetCurrentStore()
+    If Not st Is Nothing Then
+        Set cats = st.Categories
+    End If
+    If cats Is Nothing Then
+        Set cats = Application.Session.Categories
+    End If
     If cats Is Nothing Then Exit Sub
     
     For Each c In cats
