@@ -1,0 +1,31 @@
+Private Sub InitControlReferences()
+    'sichere Zuweisung über Controls-Auflösung
+    On Error Resume Next
+    Set catInput = Nothing
+    Set catInput = Me.Controls("catInput")
+    Set lblConfigPath = Nothing
+    Set lblConfigPath = Me.Controls("lblConfigPath")
+    Set btnSelectConfigFolder = Nothing
+    Set btnSelectConfigFolder = Me.Controls("btnSelectConfigFolder")
+    Set btnAddCategory = Nothing
+    Set btnAddCategory = Me.Controls("btnAddCategory")
+    Set btnRemoveCategory = Nothing
+    Set btnRemoveCategory = Me.Controls("btnRemoveCategory")
+    Set btnAddMainKeyword = Nothing
+    Set btnAddMainKeyword = Me.Controls("btnAddMainKeyword")
+    Set btnRemoveMainKeyword = Nothing
+    Set btnRemoveMainKeyword = Me.Controls("btnRemoveMainKeyword")
+    Set btnAddSubKeyword = Nothing
+    Set btnAddSubKeyword = Me.Controls("btnAddSubKeyword")
+    Set btnRemoveSubKeyword = Nothing
+    Set btnRemoveSubKeyword = Me.Controls("btnRemoveSubKeyword")
+    Set lstCategories = Nothing
+    Set lstCategories = Me.Controls("lstCategories")
+    Set chkStatusZK = Nothing
+    Set chkStatusZK = Me.Controls("chkStatusZK")
+    Set chkStatusZWV = Nothing
+    Set chkStatusZWV = Me.Controls("chkStatusZWV")
+    Set chkStatusFF = Nothing
+    Set chkStatusFF = Me.Controls("chkStatusFF")
+    On Error GoTo 0
+End Sub
