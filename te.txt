@@ -6,21 +6,11 @@ Dim configFolderPath As String
 Dim configFilePath As String
 Dim currentStore As Outlook.Store
 Const CONFIG_FILENAME As String = "VerfgFormConfig.txt"
+Const HEADER_DEFAULT_TITLE As String = "Z III 3 - ENO SASPF"
 
 
 
 'Allen zur Kentnis
-Private Sub CheckBox19_Change()
-  CheckBox1.Value = True
- CheckBox4.Value = True
- CheckBox7.Value = True
- CheckBox10.Value = True
- CheckBox13.Value = True
- CheckBox16.Value = True
- 
- 
-End Sub
- 
 'Verschlagwortung: Hauptschlagwort
 Private Sub ComboBox1_Change()
 'tbd zusätzliche Metadaten zuordnen z.B. Projekte usw., statt hierfür ebenfalls Kategorien nutzen zu müssen
@@ -43,24 +33,26 @@ End Sub
 
 'Sucht nach Ordner Ablage im GP ENO SASPF und setzt globale Variable DestFolder
 Private Sub setAblage()
-    Dim olApp As Outlook.Application
-    Dim olVerz As Outlook.MAPIFolder, olSubVerz1 As Outlook.MAPIFolder
+    Dim st As Outlook.Store
+    Dim root As Outlook.MAPIFolder
+    Set DestFolder = Nothing
     
-    Set olApp = CreateObject("Outlook.Application")
-    For Each olVerz In olApp.GetNamespace("Mapi").Folders
-        'Debug.Print olVerz
-        If olVerz.name = "BMVgZIII3SASPF@bmvg.bund.de" Then
-            Set olSubVerz1 = olVerz
-            Set DestFolder = olSubVerz1.Folders("Ablage")
-            'MsgBox "Gefunden: " & DestFolder
-            Exit For
-        End If
-    Next olVerz
-    If DestFolder Is Nothing Then
-        'Fallback: Inbox, damit kein Move-Fehler auftritt
+    Set st = GetCurrentStore()
+    If st Is Nothing Then
+        Set st = Application.Session.DefaultStore
+    End If
+    
+    If Not st Is Nothing Then
         On Error Resume Next
-        Set DestFolder = olApp.GetNamespace("Mapi").GetDefaultFolder(olFolderInbox)
+        Set root = st.GetRootFolder
         On Error GoTo 0
+        If Not root Is Nothing Then
+            Set DestFolder = FindFolderByName(root, "Ablage")
+        End If
+    End If
+    
+    If DestFolder Is Nothing Then
+        MsgBox "Ablage-Ordner im aktuellen Postfach nicht gefunden. Bitte Ordner anlegen oder auswählen.", vbExclamation
     End If
 End Sub
 
@@ -128,10 +120,8 @@ End Sub
 Private Sub CommandButton1_Click()
 
 
-    Dim FontName As String, FontColor As String
     Dim myuser As Object
-    Dim comment As String, InsertText As String
-    Dim myInbox As Folder
+    Dim comment As String
     Dim selectedCategories As Collection
     Dim catInfo As Variant
     Dim tableRows As String
@@ -188,6 +178,7 @@ Private Sub CommandButton1_Click()
   
   'Überschrift
   InsertText1 = "<table style= 'border-collapse:collapse;border-spacing:0'><tr><th style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;background-color:#9b9b9b' colspan=2 >Z III 3 - ENO SASPF</th><th width=300 style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;background-color:#9b9b9b'></th></tr>"
+  InsertText1 = "<table style= 'border-collapse:collapse;border-spacing:0'><tr><th style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;background-color:#9b9b9b' colspan=2 >" & GetHeaderTitle() & "</th><th width=300 style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;background-color:#9b9b9b'></th></tr>"
   
   'Verfügender und Datum
   InsertText2 = "<tr><td style='font-family:Arial, sans-serif;font-size:8px;font-weight:normal;padding:5px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>Verfügung: " & verfg & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:5px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>WV: " & wv & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'></td></tr>"
@@ -268,22 +259,6 @@ End Sub
 
 
 
-Private Sub Frame2_Click()
-
-End Sub
-
-Private Sub Frame3_Click()
-
-End Sub
-
-Private Sub Label24_Click()
-
-End Sub
-
-Private Sub Label7_Click()
-
-End Sub
-
 Private Sub UserForm_Initialize()
 
     HideLegacyCategoryControls
@@ -341,6 +316,23 @@ Private Function GetCurrentStore() As Outlook.Store
         End If
     End If
     Set GetCurrentStore = Application.Session.DefaultStore
+End Function
+
+Private Function FindFolderByName(parentFolder As Outlook.MAPIFolder, targetName As String) As Outlook.MAPIFolder
+    Dim f As Outlook.MAPIFolder
+    If StrComp(parentFolder.Name, targetName, vbTextCompare) = 0 Then
+        Set FindFolderByName = parentFolder
+        Exit Function
+    End If
+    For Each f In parentFolder.Folders
+        If StrComp(f.Name, targetName, vbTextCompare) = 0 Then
+            Set FindFolderByName = f
+            Exit Function
+        Else
+            Set FindFolderByName = FindFolderByName(f, targetName)
+            If Not FindFolderByName Is Nothing Then Exit Function
+        End If
+    Next f
 End Function
 
 Private Sub HideLegacyCategoryControls()
@@ -614,6 +606,37 @@ Private Sub RefreshCategoryUI()
     End If
 End Sub
 
+Private Sub MoveSelectedCategory(offset As Long)
+    Dim idx As Long
+    Dim newIdx As Long
+    Dim temp As Variant
+    If Me.lstCategories.ListCount = 0 Then Exit Sub
+    idx = Me.lstCategories.ListIndex
+    If idx < 0 Then Exit Sub
+    newIdx = idx + offset
+    If newIdx < 0 Or newIdx >= Me.lstCategories.ListCount Then Exit Sub
+    
+    'Reihenfolge in categoryList tauschen
+    Dim arr() As Variant
+    Dim i As Long
+    ReDim arr(1 To categoryList.Count)
+    For i = 1 To categoryList.Count
+        arr(i) = categoryList(i)
+    Next i
+    temp = arr(idx + 1)
+    arr(idx + 1) = arr(newIdx + 1)
+    arr(newIdx + 1) = temp
+    
+    Set categoryList = New Collection
+    For i = 1 To UBound(arr)
+        categoryList.Add arr(i)
+    Next i
+    
+    SaveConfigData
+    RefreshCategoryUI
+    Me.lstCategories.ListIndex = newIdx
+End Sub
+
 Private Function GetStatusForCategory(catName As String) As String
     If statusDict Is Nothing Then
         Set statusDict = CreateObject("Scripting.Dictionary")
@@ -860,6 +883,14 @@ Private Sub btnRemoveCategory_Click()
     RemoveCategoryFromInput
 End Sub
 
+Private Sub btnCatUp_Click()
+    MoveSelectedCategory -1
+End Sub
+
+Private Sub btnCatDown_Click()
+    MoveSelectedCategory 1
+End Sub
+
 Private Sub btnSelectConfigFolder_Click()
     Dim newPath As String
     newPath = PromptForConfigFolder
@@ -892,3 +923,14 @@ End Sub
 Private Sub btnSyncCategories_Click()
     SyncCategoriesFromOutlook
 End Sub
+
+Private Function GetHeaderTitle() As String
+    Dim v As String
+    On Error Resume Next
+    v = Trim$(Me.txtHeaderTitle.Value)
+    On Error GoTo 0
+    If Len(v) = 0 Then
+        v = HEADER_DEFAULT_TITLE
+    End If
+    GetHeaderTitle = v
+End Function
