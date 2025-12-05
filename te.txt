@@ -186,6 +186,16 @@ Private Sub CommandButton1_Click()
             End If
         End If
     Next catInfo
+
+    'Wenn Kategorien fehlen: Hinweis und Abbruch, Maske bleibt offen
+    If missingCats.Count > 0 Then
+        ReDim arrMissing(1 To missingCats.Count)
+        For idx = 1 To missingCats.Count
+            arrMissing(idx) = missingCats(idx)
+        Next idx
+        MsgBox "Folgende Kategorien existieren (noch) nicht in Outlook und wurden nicht gesetzt: " & Join(arrMissing, ", "), vbInformation
+        Exit Sub
+    End If
     
     comment = TextBox1
     wv = TextBox2
@@ -236,14 +246,6 @@ Private Sub CommandButton1_Click()
             End With
         End If
     Next
-    
-    If missingCats.Count > 0 Then
-        ReDim arrMissing(1 To missingCats.Count)
-        For idx = 1 To missingCats.Count
-            arrMissing(idx) = missingCats(idx)
-        Next idx
-        MsgBox "Folgende Kategorien existieren (noch) nicht in Outlook und wurden nicht gesetzt: " & Join(arrMissing, ", "), vbInformation
-    End If
     
     Unload Me
     
@@ -818,6 +820,24 @@ Private Function CategoryExists(catName As String) As Boolean
     Next c
 End Function
 
+Private Sub SyncCategoriesFromOutlook()
+    Dim cats As Outlook.Categories
+    Dim c As Outlook.Category
+    Dim newList As New Collection
+    On Error Resume Next
+    Set cats = Application.Session.Categories
+    If cats Is Nothing Then Exit Sub
+    
+    For Each c In cats
+        newList.Add c.Name
+    Next c
+    
+    Set categoryList = newList
+    Set statusDict = CreateObject("Scripting.Dictionary")
+    SaveConfigData
+    RefreshCategoryUI
+End Sub
+
 Private Sub btnAddCategory_Click()
     AddCategoryFromInput
 End Sub
@@ -853,4 +873,8 @@ End Sub
 
 Private Sub btnRemoveSubKeyword_Click()
     RemoveSubKeywordFromInput
+End Sub
+
+Private Sub btnSyncCategories_Click()
+    SyncCategoriesFromOutlook
 End Sub
