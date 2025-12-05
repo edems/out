@@ -154,7 +154,9 @@ Private Sub CommandButton1_Click()
     Dim statusText As String
     Dim mailCategories As Collection
     Dim categoriesString As String
+    Dim missingCats As Collection
     Dim arr() As String
+    Dim arrMissing() As String
     Dim idx As Long
     Dim verfg As String
     Dim wv As String
@@ -171,12 +173,17 @@ Private Sub CommandButton1_Click()
     
     Set selectedCategories = GetSelectedCategories()
     Set mailCategories = New Collection
+    Set missingCats = New Collection
     
     For Each catInfo In selectedCategories
         statusText = catInfo("status")
         tableRows = tableRows & "<tr><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>" & catInfo("name") & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>" & statusText & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'></td></tr>"
         If Len(Trim$(statusText)) > 0 Then
-            mailCategories.Add catInfo("name")
+            If CategoryExists(CStr(catInfo("name"))) Then
+                mailCategories.Add catInfo("name")
+            Else
+                missingCats.Add catInfo("name")
+            End If
         End If
     Next catInfo
     
@@ -229,6 +236,14 @@ Private Sub CommandButton1_Click()
             End With
         End If
     Next
+    
+    If missingCats.Count > 0 Then
+        ReDim arrMissing(1 To missingCats.Count)
+        For idx = 1 To missingCats.Count
+            arrMissing(idx) = missingCats(idx)
+        Next idx
+        MsgBox "Folgende Kategorien existieren (noch) nicht in Outlook und wurden nicht gesetzt: " & Join(arrMissing, ", "), vbInformation
+    End If
     
     Unload Me
     
@@ -787,6 +802,21 @@ Private Sub RemoveSubKeywordFromInput()
     SaveConfigData
     PopulateKeywordCombos
 End Sub
+
+Private Function CategoryExists(catName As String) As Boolean
+    Dim cats As Outlook.Categories
+    Dim c As Outlook.Category
+    CategoryExists = False
+    On Error Resume Next
+    Set cats = Application.Session.Categories
+    If cats Is Nothing Then Exit Function
+    For Each c In cats
+        If StrComp(c.Name, catName, vbTextCompare) = 0 Then
+            CategoryExists = True
+            Exit Function
+        End If
+    Next c
+End Function
 
 Private Sub btnAddCategory_Click()
     AddCategoryFromInput
