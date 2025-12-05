@@ -1,31 +1,826 @@
-Private Sub InitControlReferences()
-    'sichere Zuweisung über Controls-Auflösung
+VERSION 5.00
+Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} VerfgForm 
+   Caption         =   "Verfügung ENO SASPF BMVg"
+   ClientHeight    =   9660
+   ClientLeft      =   120
+   ClientTop       =   465
+   ClientWidth     =   14355
+   OleObjectBlob   =   "VerfgForm.frx":0000
+   StartUpPosition =   1  'Fenstermitte
+End
+Attribute VB_Name = "VerfgForm"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+
+
+Dim DestFolder As Folder
+Dim categoryList As Collection
+Dim keywordDict As Object 'Scripting.Dictionary: MainKeyword -> Collection of SubKeywords
+Dim statusDict As Object 'Scripting.Dictionary: CategoryName -> status string
+Dim configFolderPath As String
+Dim configFilePath As String
+Const CONFIG_FILENAME As String = "VerfgFormConfig.txt"
+
+
+
+'Allen zur Kentnis
+Private Sub CheckBox19_Change()
+  CheckBox1.Value = True
+ CheckBox4.Value = True
+ CheckBox7.Value = True
+ CheckBox10.Value = True
+ CheckBox13.Value = True
+ CheckBox16.Value = True
+ 
+ 
+End Sub
+ 
+'Verschlagwortung: Hauptschlagwort
+Private Sub ComboBox1_Change()
+'tbd zusätzliche Metadaten zuordnen z.B. Projekte usw., statt hierfür ebenfalls Kategorien nutzen zu müssen
+    Dim subList As Collection
+    Dim item As Variant
+    
+    ComboBox2.Clear
+    If keywordDict Is Nothing Then Exit Sub
+    If keywordDict.Exists(ComboBox1.Value) Then
+        Set subList = keywordDict(ComboBox1.Value)
+        For Each item In subList
+            ComboBox2.AddItem item
+        Next item
+        If ComboBox2.ListCount > 0 Then
+            ComboBox2.ListIndex = 0
+        End If
+    End If
+End Sub
+
+
+'Sucht nach Ordner Ablage im GP ENO SASPF und setzt globale Variable DestFolder
+Private Sub setAblage()
+    Dim olApp As Outlook.Application
+    Dim olVerz As Outlook.MAPIFolder, olSubVerz1 As Outlook.MAPIFolder
+    
+    Set olApp = CreateObject("Outlook.Application")
+    For Each olVerz In olApp.GetNamespace("Mapi").Folders
+        'Debug.Print olVerz
+        If olVerz.name = "BMVgZIII3SASPF@bmvg.bund.de" Then
+            Set olSubVerz1 = olVerz
+            Set DestFolder = olSubVerz1.Folders("Ablage")
+            'MsgBox "Gefunden: " & DestFolder
+            Exit For
+        End If
+    Next olVerz
+    If DestFolder Is Nothing Then
+        'Fallback: Inbox, damit kein Move-Fehler auftritt
+        On Error Resume Next
+        Set DestFolder = olApp.GetNamespace("Mapi").GetDefaultFolder(olFolderInbox)
+        On Error GoTo 0
+    End If
+End Sub
+
+'Nachverfolgung setzen (wahlweise mit absolutem Datum oder relativer Zeitangabe (heute + AddDays))
+Public Sub MarkItemAsTask(ByVal AddDays As Long, _
+  Optional absDate As Date, _
+  Optional TimeOfDay As String = "08:00", _
+  Optional subject As String, _
+  Optional Mail As Outlook.MailItem _
+)
+  Dim Items As VBA.Collection
+  Dim obj As Object
+  Dim i As Long
+  'Dim dt As Date
+  Dim actualDate As Date
+  Dim myDueDate As Date
+  Dim tm As String
+  Dim Icon As OlMarkInterval
+  
+  
+  If AddDays = 0 Then
+    If absDate > 0 Then
+        actualDate = Date
+        AddDays = DateDiff("d", actualDate, absDate)
+    End If
+  End If
+  'dt = DateAdd("d", AddDays, Date)
+  tm = CStr(absDate) & " " & TimeOfDay
+  
+  If AddDays < 1 Then
+    Icon = olMarkToday
+  ElseIf AddDays = 1 Then
+    Icon = olMarkTomorrow
+  ElseIf Weekday(Date, vbUseSystemDayOfWeek) + AddDays < 8 Then
+    Icon = olMarkThisWeek
+  Else
+    Icon = olMarkNextWeek
+  End If
+  
+  If Mail Is Nothing Then
+    Set Items = GetCurrentItems
+  Else
+    Set Items = New VBA.Collection
+    Items.Add Mail
+  End If
+  
+  For Each obj In Items
+    If TypeOf obj Is Outlook.MailItem Then
+      Set Mail = obj
+      Mail.MarkAsTask Icon
+      Mail.TaskStartDate = tm
+      Mail.TaskDueDate = tm
+      If Len(subject) Then
+        Mail.TaskSubject = subject
+        Mail.FlagRequest = subject
+      End If
+      Mail.ReminderTime = tm
+      Mail.ReminderSet = True
+      Mail.Save
+    End If
+  Next
+End Sub
+
+'Button OK
+Private Sub CommandButton1_Click()
+
+
+    Dim FontName As String, FontColor As String
+    Dim myuser As Object
+    Dim comment As String, InsertText As String
+    Dim myInbox As Folder
+    Dim selectedCategories As Collection
+    Dim catInfo As Variant
+    Dim tableRows As String
+    Dim statusText As String
+    Dim mailCategories As Collection
+    Dim categoriesString As String
+    Dim arr() As String
+    Dim idx As Long
+    Dim verfg As String
+    Dim wv As String
+    Dim InsertText1 As String
+    Dim InsertText2 As String
+    Dim InsertText8 As String
+    Dim InsertCat As String
+    
+    Set my = Application.GetNamespace("MAPI")
+    Set myuser = my.CurrentUser
+    Set myInbox = my.GetDefaultFolder(olFolderInbox)
+   
+    setAblage
+    
+    Set selectedCategories = GetSelectedCategories()
+    Set mailCategories = New Collection
+    
+    For Each catInfo In selectedCategories
+        statusText = catInfo("status")
+        tableRows = tableRows & "<tr><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>" & catInfo("name") & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>" & statusText & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'></td></tr>"
+        If Len(Trim$(statusText)) > 0 Then
+            mailCategories.Add catInfo("name")
+        End If
+    Next catInfo
+    
+    comment = TextBox1
+    wv = TextBox2
+    verfg = TextBox6
+  
+  'Überschrift
+  InsertText1 = "<table style= 'border-collapse:collapse;border-spacing:0'><tr><th style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;background-color:#9b9b9b' colspan=2 >Z III 3 - ENO SASPF</th><th width=300 style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;background-color:#9b9b9b'></th></tr>"
+  
+  'Verfügender und Datum
+  InsertText2 = "<tr><td style='font-family:Arial, sans-serif;font-size:8px;font-weight:normal;padding:5px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>Verfügung: " & verfg & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:bold;padding:5px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>WV: " & wv & "</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'></td></tr>"
+    
+  'Dynamische Kategorien
+    InsertText8 = tableRows
+    InsertText8 = InsertText8 & "<tr><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>Bemerkung / Erl&auml;uterung:</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'  colspan=2>" & TextBox1.Value & "</td></tr>"
+    InsertText8 = InsertText8 & "<tr><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'>Ablage Schlagworte:</td><td style='font-family:Arial, sans-serif;font-size:12px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal'  colspan=2 >"
+    For i = 0 To ListBox2.ListCount - 1
+         InsertText8 = InsertText8 & ListBox2.List(i, 0) & "<br>"
+    Next i
+    InsertText8 = InsertText8 & "</td></tr></table>"
+
+
+        'Nachverfolgung aktiviere, wenn TextBox2 gefüllt
+    If TextBox2.Value <> "" Then
+        MarkItemAsTask 0, TextBox2.Value
+    End If
+    
+    'setzt die Werte in die selektierte Mail ein
+    For Each Item In Application.ActiveExplorer.Selection
+        If TypeOf Item Is MailItem Then
+          With Item
+                If mailCategories.Count > 0 Then
+                    ReDim arr(1 To mailCategories.Count)
+                    For idx = 1 To mailCategories.Count
+                        arr(idx) = mailCategories(idx)
+                    Next idx
+                    categoriesString = Join(arr, ";")
+                    .Categories = categoriesString
+                End If
+                ' Tabellenausgabe
+                .HTMLBody = InsertCat & InsertText1 & InsertText2 & InsertText8 & .HTMLBody
+                .Save
+                'Verschieben nur wenn Ziel existiert
+                If Not DestFolder Is Nothing Then
+                    On Error Resume Next
+                    .Move DestFolder
+                    On Error GoTo 0
+                End If
+            End With
+        End If
+    Next
+    
+    Unload Me
+    
+End Sub
+
+
+'Button Abbrechen
+Private Sub CommandButton2_Click()
+
+Unload VerfgForm
+
+End Sub
+
+'Entfernen des selektierten Schlagwortes
+Private Sub CommandButton3_Click()
+    Dim i As Long
+    
+    For i = 0 To ListBox2.ListCount - 1
+        If ListBox2.Selected(i) Then
+            ListBox2.RemoveItem i
+        End If
+    Next i
+End Sub
+
+'Übernehmen des Schlagworts aus den Kombinationsfelder in die Liste
+Private Sub CommandButton4_Click()
+        ListBox2.AddItem (ComboBox1.Value & "-" & ComboBox2.Value)
+End Sub
+
+
+
+
+
+
+
+
+
+Private Sub Frame2_Click()
+
+End Sub
+
+Private Sub Frame3_Click()
+
+End Sub
+
+Private Sub Label24_Click()
+
+End Sub
+
+Private Sub Label7_Click()
+
+End Sub
+
+Private Sub UserForm_Initialize()
+
+    HideLegacyCategoryControls
+    EnsureConfigFolder
+    LoadConfigData
+    InitFixedControls
+    RefreshCategoryUI
+    ShowStatusForSelectedCategory
+    PopulateKeywordCombos
+    
+    'Füllt zum Start die Initialien des aktuellen Users ein
+    If Session <> 0 Then
+            str_Kurzel = Mid(Session.CurrentUser, InStr(1, Session.CurrentUser, ",") + 2, 1) & Left(Session.CurrentUser, 1) & Format(Date, "  DD.MM.YYYY")
+       Else
+            str_Kurzel = "Fehler" & Format(Date, "  DD.MM.YYYY")
+    End If
+    
+    VerfgForm.TextBox6 = str_Kurzel
+
+End Sub
+
+Private Function GetCurrentItems() As VBA.Collection
+  Dim c As VBA.Collection
+  Dim Sel As Outlook.Selection
+  Dim obj As Object
+  Dim i&
+  
+  Set c = New VBA.Collection
+  
+  If TypeOf Application.ActiveWindow Is Outlook.Inspector Then
+    c.Add Application.ActiveInspector.CurrentItem
+  Else
+    Set Sel = Application.ActiveExplorer.Selection
+    If Not Sel Is Nothing Then
+      For i = 1 To Sel.Count
+        c.Add Sel(i)
+      Next
+    End If
+  End If
+  Set GetCurrentItems = c
+End Function
+
+Private Sub HideLegacyCategoryControls()
+    Dim i As Long
+    For i = 1 To 40
+        On Error Resume Next
+        Me.Controls("CheckBox" & CStr(i)).Visible = False
+        On Error GoTo 0
+    Next i
+End Sub
+
+Private Sub EnsureConfigFolder()
+    configFolderPath = GetSetting("VerfgForm", "Config", "Path", "")
+    If Len(configFolderPath) = 0 Or Dir(configFolderPath, vbDirectory) = "" Then
+        configFolderPath = PromptForConfigFolder
+        If Len(configFolderPath) = 0 Then
+            configFolderPath = CurDir$
+        End If
+    End If
+    configFilePath = configFolderPath & "\" & CONFIG_FILENAME
+    SaveSetting "VerfgForm", "Config", "Path", configFolderPath
+End Sub
+
+Private Function PromptForConfigFolder() As String
+    Dim fd As Object
     On Error Resume Next
-    Set catInput = Nothing
-    Set catInput = Me.Controls("catInput")
-    Set lblConfigPath = Nothing
-    Set lblConfigPath = Me.Controls("lblConfigPath")
-    Set btnSelectConfigFolder = Nothing
-    Set btnSelectConfigFolder = Me.Controls("btnSelectConfigFolder")
-    Set btnAddCategory = Nothing
-    Set btnAddCategory = Me.Controls("btnAddCategory")
-    Set btnRemoveCategory = Nothing
-    Set btnRemoveCategory = Me.Controls("btnRemoveCategory")
-    Set btnAddMainKeyword = Nothing
-    Set btnAddMainKeyword = Me.Controls("btnAddMainKeyword")
-    Set btnRemoveMainKeyword = Nothing
-    Set btnRemoveMainKeyword = Me.Controls("btnRemoveMainKeyword")
-    Set btnAddSubKeyword = Nothing
-    Set btnAddSubKeyword = Me.Controls("btnAddSubKeyword")
-    Set btnRemoveSubKeyword = Nothing
-    Set btnRemoveSubKeyword = Me.Controls("btnRemoveSubKeyword")
-    Set lstCategories = Nothing
-    Set lstCategories = Me.Controls("lstCategories")
-    Set chkStatusZK = Nothing
-    Set chkStatusZK = Me.Controls("chkStatusZK")
-    Set chkStatusZWV = Nothing
-    Set chkStatusZWV = Me.Controls("chkStatusZWV")
-    Set chkStatusFF = Nothing
-    Set chkStatusFF = Me.Controls("chkStatusFF")
+    Set fd = Application.FileDialog(4) '4 = msoFileDialogFolderPicker
+    If Not fd Is Nothing Then
+        fd.AllowMultiSelect = False
+        fd.Title = "Bitte Ordner zum Speichern der Konfiguration wählen"
+        If fd.Show = -1 Then
+            PromptForConfigFolder = fd.SelectedItems(1)
+            Exit Function
+        End If
+    End If
+    Dim sh As Object, folder As Object
+    Set sh = CreateObject("Shell.Application")
+    Set folder = sh.BrowseForFolder(0, "Bitte Ordner zum Speichern der Konfiguration wählen", 0)
+    If Not folder Is Nothing Then
+        PromptForConfigFolder = folder.self.Path
+    End If
+End Function
+
+Private Sub LoadConfigData()
+    Dim section As String
+    Dim line As String
+    Dim parts As Variant
+    Dim mainKey As String
+    Dim subs As Variant
+    Dim i As Long
+    Dim f As Integer
+    
+    Set categoryList = New Collection
+    Set statusDict = CreateObject("Scripting.Dictionary")
+    Set keywordDict = CreateObject("Scripting.Dictionary")
+    keywordDict.CompareMode = 1 'Text compare
+    
+    If Len(configFilePath) = 0 Then Exit Sub
+    
+    If Len(Dir(configFilePath)) = 0 Then
+        BuildDefaultData
+        SaveConfigData
+        Exit Sub
+    End If
+    
+    f = FreeFile
+    On Error GoTo ConfigReadError
+    Open configFilePath For Input As #f
+    Do Until EOF(f)
+        Line Input #f, line
+        line = Trim$(line)
+        If Len(line) = 0 Then GoTo NextLine
+        If Left$(line, 1) = "[" And Right$(line, 1) = "]" Then
+            section = Mid$(line, 2, Len(line) - 2)
+        ElseIf section = "CATEGORIES" Then
+            categoryList.Add line
+        ElseIf section = "KEYWORDS" Then
+            parts = Split(line, "|")
+            mainKey = Trim$(parts(0))
+            If Len(mainKey) > 0 Then
+                If Not keywordDict.Exists(mainKey) Then
+                    keywordDict.Add mainKey, New Collection
+                End If
+                If UBound(parts) >= 1 Then
+                    subs = Split(parts(1), ",")
+                    For i = LBound(subs) To UBound(subs)
+                        If Len(Trim$(subs(i))) > 0 Then
+                            keywordDict(mainKey).Add Trim$(subs(i))
+                        End If
+                    Next i
+                End If
+            End If
+        End If
+NextLine:
+    Loop
+    Close #f
+    
+    If categoryList.Count = 0 Then
+        BuildDefaultData
+        SaveConfigData
+    End If
+    Exit Sub
+    
+ConfigReadError:
+    On Error Resume Next
+    Close #f
+    BuildDefaultData
+    SaveConfigData
+End Sub
+
+Private Sub SaveConfigData()
+    Dim f As Integer
+    Dim item As Variant
+    Dim mainKey As Variant
+    Dim subs As Collection
+    Dim line As String
+    
+    If categoryList Is Nothing Then
+        Set categoryList = New Collection
+    End If
+    If keywordDict Is Nothing Then
+        Set keywordDict = CreateObject("Scripting.Dictionary")
+    keywordDict.CompareMode = 1
+    End If
+    If statusDict Is Nothing Then
+        Set statusDict = CreateObject("Scripting.Dictionary")
+    End If
+    
+    If Len(configFolderPath) = 0 Then Exit Sub
+    If Dir(configFolderPath, vbDirectory) = "" Then
+        On Error Resume Next
+        MkDir configFolderPath
+        On Error GoTo 0
+    End If
+    
+    f = FreeFile
+    Open configFilePath For Output As #f
+    Print #f, "[CATEGORIES]"
+    For Each item In categoryList
+        Print #f, item
+    Next item
+    Print #f, ""
+    Print #f, "[KEYWORDS]"
+    For Each mainKey In keywordDict.Keys
+        Set subs = keywordDict(mainKey)
+        line = mainKey & "|"
+        line = line & JoinCollection(subs, ",")
+        Print #f, line
+    Next mainKey
+    Close #f
+End Sub
+
+Private Sub BuildDefaultData()
+    Dim defaults As Variant
+    Dim item As Variant
+    Set categoryList = New Collection
+    defaults = Array("000 Ltg ENO", "002 BSB Ltg ENO", "001 Nutzungsmanagement", "010 Benutzermanagement", "020 Ausbildungsmanagement", "025 ENO POI", "030 EFO", "098 Allgemeine Info", "099 Ltg zKnA")
+    For Each item In defaults
+        categoryList.Add item
+    Next item
+    
+    Set keywordDict = CreateObject("Scripting.Dictionary")
+    keywordDict.CompareMode = 1
+    Set statusDict = CreateObject("Scripting.Dictionary")
+    Dim subs As Collection
+    Set subs = New Collection
+    subs.Add "Allgemein"
+    keywordDict.Add "Schlagwort", subs
+End Sub
+
+Private Sub InitFixedControls()
+    'stellt nur Beschriftungen/Listen her; Controls müssen im Designer vorhanden sein
+    If Me.Controls.Count > 0 Then
+        On Error Resume Next
+        Me.lblConfigPath.Caption = "Konfiguration: " & configFolderPath
+        On Error GoTo 0
+    End If
+    
+    RefreshCategoryUI
+    
+    On Error Resume Next
+    Me.btnSelectConfigFolder.Caption = "Ordner wählen"
+    Me.btnAddCategory.Caption = "+ Kat"
+    Me.btnRemoveCategory.Caption = "- Kat"
+    Me.btnAddMainKeyword.Caption = "+ Haupt"
+    Me.btnRemoveMainKeyword.Caption = "- Haupt"
+    Me.btnAddSubKeyword.Caption = "+ Unter"
+    Me.btnRemoveSubKeyword.Caption = "- Unter"
     On Error GoTo 0
+End Sub
+
+Private Function GetSelectedCategories() As Collection
+    Dim result As New Collection
+    Dim catName As Variant
+    Dim statText As String
+    Dim item As Object
+    
+    If categoryList Is Nothing Then
+        Set GetSelectedCategories = result
+        Exit Function
+    End If
+    
+    If statusDict Is Nothing Then
+        Set statusDict = CreateObject("Scripting.Dictionary")
+    End If
+    
+    For Each catName In categoryList
+        statText = GetStatusForCategory(CStr(catName))
+        Set item = CreateObject("Scripting.Dictionary")
+        item("name") = CStr(catName)
+        item("status") = statText
+        result.Add item
+    Next catName
+    
+    Set GetSelectedCategories = result
+End Function
+
+Private Function JoinCollection(col As Collection, separator As String) As String
+    Dim arr() As String
+    Dim i As Long
+    If col Is Nothing Then
+        JoinCollection = ""
+        Exit Function
+    End If
+    If col.Count = 0 Then
+        JoinCollection = ""
+        Exit Function
+    End If
+    ReDim arr(1 To col.Count)
+    For i = 1 To col.Count
+        arr(i) = col(i)
+    Next i
+    JoinCollection = Join(arr, separator)
+End Function
+
+Private Sub RefreshCategoryUI()
+    Dim item As Variant
+    Dim selName As String
+    Dim idx As Long
+    
+    On Error Resume Next
+    If Me.lstCategories.ListCount > 0 And Me.lstCategories.ListIndex >= 0 Then selName = Me.lstCategories.List(Me.lstCategories.ListIndex)
+    Me.lstCategories.Clear
+    On Error GoTo 0
+    
+    On Error Resume Next
+    Me.catInput.Clear
+    On Error GoTo 0
+    
+    If categoryList Is Nothing Then Exit Sub
+    
+    For Each item In categoryList
+        On Error Resume Next
+        Me.catInput.AddItem item
+        Me.lstCategories.AddItem item
+        On Error GoTo 0
+    Next item
+    
+    If Me.lstCategories.ListCount > 0 Then
+            idx = 0
+            If Len(selName) > 0 Then
+                For idx = 0 To Me.lstCategories.ListCount - 1
+                    If StrComp(Me.lstCategories.List(idx), selName, vbTextCompare) = 0 Then
+                        Me.lstCategories.ListIndex = idx
+                        Exit For
+                    End If
+                Next idx
+            Else
+                Me.lstCategories.ListIndex = 0
+            End If
+    End If
+End Sub
+
+Private Function GetStatusForCategory(catName As String) As String
+    If statusDict Is Nothing Then
+        Set statusDict = CreateObject("Scripting.Dictionary")
+    End If
+    If statusDict.Exists(catName) Then
+        GetStatusForCategory = CStr(statusDict(catName))
+    Else
+        GetStatusForCategory = ""
+    End If
+End Function
+
+Private Sub ShowStatusForSelectedCategory()
+    Dim catName As String
+    Dim stat As String
+    
+    On Error Resume Next
+    If Me.lstCategories.ListIndex < 0 Then Exit Sub
+    
+    catName = Me.lstCategories.List(Me.lstCategories.ListIndex)
+    stat = GetStatusForCategory(catName)
+    
+    On Error Resume Next
+    Me.chkStatusZK.Value = InStr(1, stat, "zK", vbTextCompare) > 0
+    Me.chkStatusZWV.Value = InStr(1, stat, "zwV", vbTextCompare) > 0
+    Me.chkStatusFF.Value = InStr(1, stat, "FF", vbTextCompare) > 0
+    On Error GoTo 0
+End Sub
+
+Private Sub SaveStatusForSelectedCategory()
+    Dim catName As String
+    Dim pieces As Collection
+    
+    On Error Resume Next
+    If Me.lstCategories.ListIndex < 0 Then Exit Sub
+    
+    catName = Me.lstCategories.List(Me.lstCategories.ListIndex)
+    If statusDict Is Nothing Then Set statusDict = CreateObject("Scripting.Dictionary")
+    Set pieces = New Collection
+    If Me.chkStatusZK.Value = True Then pieces.Add "zK"
+    If Me.chkStatusZWV.Value = True Then pieces.Add "zwV"
+    If Me.chkStatusFF.Value = True Then pieces.Add "FF"
+    
+    statusDict(catName) = JoinCollection(pieces, " ")
+End Sub
+
+Private Sub PopulateKeywordCombos()
+    Dim mainKey As Variant
+    Dim subs As Collection
+    Dim item As Variant
+    On Error Resume Next
+    Me.ComboBox1.Clear
+    Me.ComboBox2.Clear
+    On Error GoTo 0
+    
+    If keywordDict Is Nothing Then Exit Sub
+    For Each mainKey In keywordDict.Keys
+        Me.ComboBox1.AddItem mainKey
+    Next mainKey
+    If Me.ComboBox1.ListCount > 0 Then
+        Me.ComboBox1.ListIndex = 0
+        Set subs = keywordDict(Me.ComboBox1.Value)
+        For Each item In subs
+            Me.ComboBox2.AddItem item
+        Next item
+        If Me.ComboBox2.ListCount > 0 Then Me.ComboBox2.ListIndex = 0
+    End If
+End Sub
+
+Private Sub lstCategories_Change()
+    ShowStatusForSelectedCategory
+End Sub
+
+Private Sub chkStatusZK_Click()
+    SaveStatusForSelectedCategory
+End Sub
+
+Private Sub chkStatusZWV_Click()
+    SaveStatusForSelectedCategory
+End Sub
+
+Private Sub chkStatusFF_Click()
+    SaveStatusForSelectedCategory
+End Sub
+
+Private Sub AddCategoryFromInput()
+    Dim name As String
+    Dim item As Variant
+    On Error Resume Next
+    name = Trim$(Me.catInput.Text)
+    On Error GoTo 0
+    If Len(name) = 0 Then Exit Sub
+    For Each item In categoryList
+        If StrComp(item, name, vbTextCompare) = 0 Then Exit Sub
+    Next item
+    categoryList.Add name
+    SaveConfigData
+    RefreshCategoryUI
+    On Error Resume Next
+    Me.catInput.Text = name
+    Dim idx As Long
+    If Me.lstCategories.ListCount > 0 Then
+        For idx = 0 To Me.lstCategories.ListCount - 1
+            If StrComp(Me.lstCategories.List(idx), name, vbTextCompare) = 0 Then
+                Me.lstCategories.ListIndex = idx
+                Exit For
+            End If
+        Next idx
+    End If
+    On Error GoTo 0
+End Sub
+
+Private Sub RemoveCategoryFromInput()
+    Dim name As String
+    Dim i As Long
+    On Error Resume Next
+    name = Trim$(Me.catInput.Text)
+    On Error GoTo 0
+    If Len(name) = 0 Then Exit Sub
+    For i = categoryList.Count To 1 Step -1
+        If StrComp(categoryList(i), name, vbTextCompare) = 0 Then
+            categoryList.Remove i
+        End If
+    Next i
+    If Not statusDict Is Nothing Then
+        If statusDict.Exists(name) Then statusDict.Remove name
+    End If
+    SaveConfigData
+    RefreshCategoryUI
+End Sub
+
+Private Sub AddMainKeywordFromInput()
+    Dim name As String
+    name = Trim$(ComboBox1.Text)
+    If Len(name) = 0 Then Exit Sub
+    If Not keywordDict.Exists(name) Then
+        keywordDict.Add name, New Collection
+    End If
+    SaveConfigData
+    PopulateKeywordCombos
+End Sub
+
+Private Sub RemoveMainKeywordFromInput()
+    Dim name As String
+    name = Trim$(ComboBox1.Text)
+    If Len(name) = 0 Then Exit Sub
+    If keywordDict.Exists(name) Then
+        keywordDict.Remove name
+        SaveConfigData
+        PopulateKeywordCombos
+    End If
+End Sub
+
+Private Sub AddSubKeywordFromInput()
+    Dim mainKey As String
+    Dim subKey As String
+    Dim subs As Collection
+    Dim item As Variant
+    mainKey = Trim$(ComboBox1.Text)
+    subKey = Trim$(ComboBox2.Text)
+    If Len(mainKey) = 0 Or Len(subKey) = 0 Then Exit Sub
+    If Not keywordDict.Exists(mainKey) Then
+        keywordDict.Add mainKey, New Collection
+    End If
+    Set subs = keywordDict(mainKey)
+    For Each item In subs
+        If StrComp(item, subKey, vbTextCompare) = 0 Then Exit Sub
+    Next item
+    subs.Add subKey
+    SaveConfigData
+    PopulateKeywordCombos
+    ComboBox1.Value = mainKey
+    ComboBox2.Value = subKey
+End Sub
+
+Private Sub RemoveSubKeywordFromInput()
+    Dim mainKey As String
+    Dim subKey As String
+    Dim subs As Collection
+    Dim i As Long
+    mainKey = Trim$(ComboBox1.Text)
+    subKey = Trim$(ComboBox2.Text)
+    If Len(mainKey) = 0 Or Len(subKey) = 0 Then Exit Sub
+    If Not keywordDict.Exists(mainKey) Then Exit Sub
+    Set subs = keywordDict(mainKey)
+    For i = subs.Count To 1 Step -1
+        If StrComp(subs(i), subKey, vbTextCompare) = 0 Then
+            subs.Remove i
+        End If
+    Next i
+    SaveConfigData
+    PopulateKeywordCombos
+End Sub
+
+Private Sub btnAddCategory_Click()
+    AddCategoryFromInput
+End Sub
+
+Private Sub btnRemoveCategory_Click()
+    RemoveCategoryFromInput
+End Sub
+
+Private Sub btnSelectConfigFolder_Click()
+    Dim newPath As String
+    newPath = PromptForConfigFolder
+    If Len(newPath) = 0 Then Exit Sub
+    configFolderPath = newPath
+    configFilePath = configFolderPath & "\" & CONFIG_FILENAME
+    SaveSetting "VerfgForm", "Config", "Path", configFolderPath
+    LoadConfigData
+    InitFixedControls
+    RefreshCategoryUI
+    PopulateKeywordCombos
+End Sub
+
+Private Sub btnAddMainKeyword_Click()
+    AddMainKeywordFromInput
+End Sub
+
+Private Sub btnRemoveMainKeyword_Click()
+    RemoveMainKeywordFromInput
+End Sub
+
+Private Sub btnAddSubKeyword_Click()
+    AddSubKeywordFromInput
+End Sub
+
+Private Sub btnRemoveSubKeyword_Click()
+    RemoveSubKeywordFromInput
 End Sub
